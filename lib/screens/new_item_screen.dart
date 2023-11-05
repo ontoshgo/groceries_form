@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
 import 'package:flutter/material.dart';
 import 'package:groceries/models/category.dart';
 import 'package:groceries/models/grocery_item.dart';
@@ -14,19 +18,50 @@ class NewItemScreen extends StatefulWidget {
 class _NewItemScreenState extends State<NewItemScreen> {
   final _formKey = GlobalKey<FormState>();
 
+  bool _isSending = false;
+
   String _enteredName = "";
   int _enteredQuantity = 0;
   Category _selectedCategory = categories[Categories.vegetables]!;
 
-  void _saveItem() {
+  void _saveItem() async {
     final isValid = _formKey.currentState!.validate();
     if (isValid) {
       _formKey.currentState!.save();
-      Navigator.of(context).pop(GroceryItem(
-          id: DateTime.now().toString(),
-          name: _enteredName,
-          quantity: _enteredQuantity,
-          category: _selectedCategory));
+      setState(() {
+        _isSending = true;
+      });
+      final url = Uri.https(
+        "flutter-backend-training-default-rtdb.europe-west1.firebasedatabase.app",
+        "shopping-list.json",
+      );
+      try {
+        final response = await http.post(url,
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: json.encode({
+              "name": _enteredName,
+              "quantity": _enteredQuantity,
+              "category": _selectedCategory.name
+            }));
+        if (!context.mounted) {
+          return;
+        }
+        final Map<String, dynamic> decodedResponse = jsonDecode(response.body);
+
+        final newItem = GroceryItem(
+            id: decodedResponse["name"],
+            name: _enteredName,
+            quantity: _enteredQuantity,
+            category: _selectedCategory);
+        Navigator.of(context).pop(newItem);
+      } catch (error) {
+        //retry or handle an error somehow
+        setState(() {
+          _isSending = false;
+        });
+      }
     }
   }
 
@@ -129,9 +164,18 @@ class _NewItemScreenState extends State<NewItemScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(onPressed: _reset, child: const Text("Reset")),
+                  TextButton(
+                      onPressed: _isSending ? null : _reset,
+                      child: const Text("Reset")),
                   ElevatedButton(
-                      onPressed: _saveItem, child: const Text("Add item"))
+                      onPressed: _isSending ? null : _saveItem,
+                      child: _isSending
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(),
+                            )
+                          : const Text("Add item"))
                 ],
               )
             ],
